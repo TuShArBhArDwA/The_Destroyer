@@ -264,7 +264,7 @@ function appendMessage(role, content, isThinking = false) {
   const div = document.createElement('div');
   div.className = `qa-message ${role}`;
 
-  const label = role === 'user' ? 'You' : 'Desk Assistant';
+  const label = role === 'user' ? 'You' : 'Pipeline assistant';
   const bubbleContent = isThinking
     ? `<div class="generating-state" style="padding:0"><div class="gen-dots"><div class="gen-dot"></div><div class="gen-dot"></div><div class="gen-dot"></div></div></div>`
     : S.escapeHtml(content);

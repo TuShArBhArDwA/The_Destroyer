@@ -117,6 +117,8 @@ Create a root `.env` file containing your secure keys:
 ```text
 NEWS_API_KEY=your_key_here
 GROQ_API_KEY=your_key_here
+# Optional — defaults to llama-3.1-8b-instant (lighter on free-tier limits)
+# GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
 ### 3. Run Locally
@@ -160,4 +162,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If you'd like to connect, feel free to reach out:
 - [Sweta Shukla](https://minianonlink.vercel.app/swetashukla)
-- [Tushar Bhardwaj](https://minianonlink.vercel.app/tusharbhardwaj)

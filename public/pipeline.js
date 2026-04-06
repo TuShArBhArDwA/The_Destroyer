@@ -1,8 +1,11 @@
 /* pipeline.js — AI Editorial Pipeline for The Destroyer */
 
-// Groq calls are proxied through /api/groq on our Express server so API keys stay server-side
+// Groq calls are proxied through /api/groq on our Express server so API keys stay server-side.
+// Actual model is chosen on the server (GROQ_MODEL in .env); this matches the server default for local tooling only.
 const GROQ_ENDPOINT_PROXY = '/api/groq';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
+/** Long-form article JSON needs headroom (body + escapes + keyFacts). */
+const ARTICLE_MAX_TOKENS = 4096;
 
 const CATEGORY_LABELS = {
   general: 'General', technology: 'Technology', business: 'Business',
@@ -58,6 +61,64 @@ function parseLLMJson(str) {
   }
 }
 
+/** Find index of the `}` that closes the first `{` in s (respects strings). Returns -1 if unbalanced / truncated. */
+function findMatchingClosingBrace(s) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString) {
+      if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Extract one JSON object from model text (fenced ```json block, preamble, or raw). */
+function extractJsonObjectFromLLMOutput(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fence ? fence[1].trim() : trimmed;
+  const start = candidate.indexOf('{');
+  if (start === -1) return null;
+  const slice = candidate.slice(start);
+  const end = findMatchingClosingBrace(slice);
+  if (end === -1) return null;
+  return slice.slice(0, end + 1);
+}
+
+/** Normal Groq/OpenAI-shaped completion body; throws a clear error if missing or empty. */
+function groqCompletionText(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === 'string' && content.trim()) return content.trim();
+  const apiErr =
+    data?.error?.message ||
+    (typeof data?.error === 'string' ? data.error : null);
+  if (apiErr) throw new Error(apiErr);
+  throw new Error(
+    'AI returned no message (empty choices). Check GROQ_API_KEY, model name, and quota.'
+  );
+}
+
 // ── Core Groq API call (proxied through server) ─────────────────────────────
 async function callGroq(messages, maxTokens = 1024, temperature = 0.65) {
   const response = await fetch(GROQ_ENDPOINT_PROXY, {
@@ -73,13 +134,15 @@ async function callGroq(messages, maxTokens = 1024, temperature = 0.65) {
     })
   });
 
+  const data = await response.json().catch(() => ({}));
+
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(`API error ${response.status}: ${err.error?.message || 'Unknown error'}`);
+    throw new Error(
+      `API error ${response.status}: ${data?.error?.message || data?.message || 'Unknown error'}`
+    );
   }
 
-  const data = await response.json();
-  return data.choices[0].message.content.trim();
+  return groqCompletionText(data);
 }
 
 // ── Streaming Groq call (proxied through server) ───────────────────────────
@@ -92,8 +155,7 @@ async function* callGroqStream(messages, maxTokens = 2048, temperature = 0.65) {
       messages,
       max_tokens: maxTokens,
       temperature,
-      stream: true,
-      response_format: { type: "json_object" }
+      stream: true
     })
   });
 
@@ -103,24 +165,37 @@ async function* callGroqStream(messages, maxTokens = 2048, temperature = 0.65) {
   const decoder = new TextDecoder();
   let buffer = '';
 
+  const handleSseLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data: ')) return false;
+    const payload = trimmed.slice(6).trim();
+    if (payload === '[DONE]') return true;
+    try {
+      const json = JSON.parse(payload);
+      const delta = json.choices?.[0]?.delta?.content;
+      if (delta) return delta;
+    } catch { /* skip malformed SSE JSON */ }
+    return null;
+  };
+
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
-    buffer = lines.pop(); // keep remainder
-    for (let line of lines) {
-      line = line.trim();
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6).trim();
-      if (payload === '[DONE]') return;
-      try {
-        const json = JSON.parse(payload);
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) yield delta;
-      } catch { /* skip malformed */ }
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      const out = handleSseLine(line);
+      if (out === true) return;
+      if (typeof out === 'string') yield out;
     }
   }
+  const tailOut = handleSseLine(buffer);
+  if (tailOut === true) return;
+  if (typeof tailOut === 'string') yield tailOut;
 }
 
 // ── Fetch headlines from our local proxy ────────────────────────────────────
@@ -153,7 +228,7 @@ async function generateCardContent(article, category = 'general') {
   const cached = sessionStorage.getItem(cacheKey);
   if (cached) return JSON.parse(cached);
 
-  const prompt = `You are a senior editor at a prestigious news publication. Based on this news item, write polished editorial copy.
+  const prompt = `You are the autonomous editorial desk of an AI-native newsroom (no human editor in the loop). Based on this wire item, write polished copy a serious reader would trust.
 
 SOURCE HEADLINE: ${article.title}
 SOURCE: ${article.source?.name || 'Wire'}
@@ -170,13 +245,13 @@ Return ONLY valid JSON format:
 
   try {
     const raw = await callGroq([
-      { role: 'system', content: 'You are a senior news editor. Return JSON only.' },
+      { role: 'system', content: 'You are an autonomous news desk producing publishable copy. Return JSON only.' },
       { role: 'user', content: prompt }
     ], 512, 0.5);
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON found');
-    const result = parseLLMJson(jsonMatch[0]);
+    const jsonStr = extractJsonObjectFromLLMOutput(raw);
+    if (!jsonStr) throw new Error('No JSON found');
+    const result = parseLLMJson(jsonStr);
     result.category = category;
     result.originalUrl = article.url;
     result.imageUrl = article.urlToImage || null;
@@ -209,7 +284,7 @@ async function generateFullArticle(article, cardData, onChunk) {
     return data;
   }
 
-  const prompt = `You are a staff writer at a prestigious long-form news publication (like The Atlantic or The Economist). Write a complete, publishable news article based on this information:
+  const prompt = `You are the autonomous long-form desk of an AI-native newsroom: your output is published without human editorial review. Write a complete, publishable news article worthy of a top outlet (depth and neutrality like The Atlantic or The Economist), based only on this information:
 
 HEADLINE: ${cardData.headline}
 SOURCE: ${cardData.source}
@@ -238,34 +313,47 @@ Return ONLY a valid JSON object matching this schema exactly:
   "keyFacts": ["Fact 1", "Fact 2", "Fact 3"]
 }`;
 
+  const messages = [
+    { role: 'system', content: 'You are an autonomous investigative-style news engine. Reply with a single JSON object only — no markdown, no preamble.' },
+    { role: 'user', content: prompt }
+  ];
+
+  function parseArticleResponse(fullText) {
+    const jsonStr = extractJsonObjectFromLLMOutput(fullText);
+    if (!jsonStr) throw new Error('No JSON in response');
+    const parsed = parseLLMJson(jsonStr);
+    if (!parsed.body || typeof parsed.body !== 'string' || !parsed.body.trim()) {
+      throw new Error('Article body missing in model response');
+    }
+    return parsed;
+  }
+
   try {
     let fullText = '';
 
     if (onChunk) {
-      for await (const chunk of callGroqStream([
-        { role: 'system', content: 'You are an award-winning news journalist. Return only valid JSON.' },
-        { role: 'user', content: prompt }
-      ], 1500, 0.5)) {
+      for await (const chunk of callGroqStream(messages, ARTICLE_MAX_TOKENS, 0.5)) {
         fullText += chunk;
         const bodyMatch = fullText.match(/"body"\s*:\s*"((?:[^"\\]|\\.)*)/);
         if (bodyMatch) {
-            let partialBody = bodyMatch[1];
-            // Fix newlines for partial render
-            partialBody = partialBody.replace(/\\n/g, '\n').replace(/\\"/g, '"');
-            onChunk(partialBody, false);
+          let partialBody = bodyMatch[1];
+          partialBody = partialBody.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+          onChunk(partialBody, false);
         }
       }
     } else {
-      fullText = await callGroq([
-        { role: 'system', content: 'You are an award-winning news journalist. Return only valid JSON.' },
-        { role: 'user', content: prompt }
-      ], 1500, 0.5);
+      fullText = await callGroq(messages, ARTICLE_MAX_TOKENS, 0.5);
     }
 
-    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON in response');
-    const result = parseLLMJson(jsonMatch[0]);
-    
+    let result;
+    try {
+      result = parseArticleResponse(fullText);
+    } catch (firstErr) {
+      console.warn('Article parse failed (stream or shape); retrying non-stream:', firstErr.message);
+      fullText = await callGroq(messages, ARTICLE_MAX_TOKENS, 0.45);
+      result = parseArticleResponse(fullText);
+    }
+
     result.source = cardData.source;
     result.originalUrl = cardData.originalUrl || article.url;
     result.category = cardData.category;
@@ -292,7 +380,7 @@ async function generateDigest(articles) {
     `${i + 1}. ${a.title} (${a.source?.name || 'Wire'})`
   ).join('\n');
 
-  const prompt = `You are the editorial director of a serious news publication writing the morning briefing.
+  const prompt = `You are the autonomous editorial director of an AI-native newsroom composing the morning briefing (no human reviews this text before readers see it).
 
 Today's top stories:
 ${headlines}
@@ -310,9 +398,9 @@ Return ONLY valid JSON:
       { role: 'user', content: prompt }
     ], 512, 0.4);
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON');
-    const result = parseLLMJson(jsonMatch[0]);
+    const jsonStr = extractJsonObjectFromLLMOutput(raw);
+    if (!jsonStr) throw new Error('No JSON');
+    const result = parseLLMJson(jsonStr);
     sessionStorage.setItem(cacheKey, JSON.stringify(result));
     return result;
   } catch (err) {
@@ -342,9 +430,11 @@ Answer reader questions accurately based ONLY on this article. Keep answers 2-4 
     body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: 500, temperature: 0.5 })
   });
   
-  if (!response.ok) throw new Error("API error");
-  const data = await response.json();
-  return data.choices[0].message.content.trim();
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`API error ${response.status}: ${data?.error?.message || 'Unknown error'}`);
+  }
+  return groqCompletionText(data);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

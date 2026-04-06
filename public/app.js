@@ -127,7 +127,7 @@ function showSkeletons() {
   }).join('');
 
   loadMoreWrap.style.display = 'none';
-  digestBody.innerHTML = `<div class="loading-state" style="color:var(--text-muted);font-size:0.8rem">Curating morning briefing...</div>`;
+  digestBody.innerHTML = `<div class="loading-state" style="color:var(--text-muted);font-size:0.8rem">Generating desk briefing (autonomous pipeline)…</div>`;
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────

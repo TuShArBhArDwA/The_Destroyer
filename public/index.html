@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>The Destroyer</title>
-  <meta name="description" content="The Destroyer is a premium news publication." />
+  <title>The Destroyer — AI-native newsroom (fully autonomous editorial)</title>
+  <meta name="description" content="The Destroyer is an HTTPS demo of an AI-native news surface: live wires are turned into serious long-form reporting by an LLM editorial pipeline, with no human in the publishing path." />
+  <meta property="og:title" content="The Destroyer — AI-native newsroom (autonomous editorial)" />
+  <meta property="og:description" content="Live wires → LLM desk → full articles and briefings, published with no human editor in the path. HTTPS demo." />
+  <meta property="og:type" content="website" />
   <script>
     if (localStorage.getItem('theme') === 'light' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: light)').matches)) {
       document.documentElement.setAttribute('data-theme', 'light');
@@ -17,14 +20,14 @@
 
 <!-- Breaking Ticker -->
 <div class="ticker-wrap" id="ticker-wrap">
-  <span class="ticker-label">LATEST</span>
+  <span class="ticker-label">LIVE WIRE</span>
   <span class="ticker-track" id="ticker-track">Loading latest headlines…&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
 </div>
 
 <!-- Masthead -->
 <header class="masthead">
   <div class="masthead-meta">
-    <div class="masthead-edition">Morning Edition</div>
+    <div class="masthead-edition">Autonomous desk</div>
     <div class="masthead-date" id="edition-date"></div>
   </div>
   <div class="masthead-logo" onclick="location.reload()">THE <em>DESTROYER</em></div>
@@ -52,12 +55,29 @@
   </div>
 </nav>
 
+<!-- Autonomous editorial disclosure (visible in demo / link previews) -->
+<section class="editorial-pipeline-band" aria-label="How The Destroyer produces stories">
+  <div class="editorial-pipeline-band-inner">
+    <div class="editorial-pipeline-band-head">
+      <span class="editorial-pipeline-eyebrow">AI-native surface</span>
+      <h2 class="editorial-pipeline-title">The whole newsroom is software</h2>
+      <p class="editorial-pipeline-lede">Headlines, decks, full articles, and the sidebar briefing are generated end-to-end by our editorial engine (Groq&nbsp;LLM). Nothing is drafted, edited, or approved by a person before you read it—only the original newswire is human-authored elsewhere.</p>
+    </div>
+    <ol class="editorial-pipeline-flow" aria-label="Editorial steps">
+      <li class="editorial-pipeline-flow-item"><span class="flow-num">1</span><span class="flow-text"><strong>Ingest</strong> real events from global wires</span></li>
+      <li class="editorial-pipeline-flow-item"><span class="flow-num">2</span><span class="flow-text"><strong>Desk pass</strong> headline + dek per story</span></li>
+      <li class="editorial-pipeline-flow-item"><span class="flow-num">3</span><span class="flow-text"><strong>Report</strong> 500–700 word piece streamed on open</span></li>
+    </ol>
+  </div>
+</section>
+
 <!-- Main -->
 <main class="main-container">
 
   <!-- Status Bar -->
   <div class="status-bar" style="border-bottom:none">
-    <span id="status-text" style="font-weight: 500; text-transform: uppercase;">Top Stories</span>
+    <span class="dot" aria-hidden="true"></span>
+    <span id="status-text" style="font-weight: 500; text-transform: uppercase;">Machine-written from live wires</span>
   </div>
 
   <!-- Hero -->
@@ -98,12 +118,15 @@
     <aside class="sidebar">
       <!-- Digest Panel -->
       <div class="panel" id="digest-panel">
-        <div class="panel-header">
-          <span class="panel-label">The Morning Briefing</span>
+        <div class="panel-header panel-header-stack">
+          <div>
+            <span class="panel-label">Desk briefing</span>
+            <span class="panel-sublabel">Synthesized by the same pipeline as the articles—no separate human edit pass.</span>
+          </div>
           <span class="panel-date" id="digest-date"></span>
         </div>
         <div class="panel-body" id="digest-body">
-          <div class="loading-state" style="color:var(--text-muted);font-size:0.8rem">Curating morning briefing...</div>
+          <div class="loading-state" style="color:var(--text-muted);font-size:0.8rem">Generating desk briefing (autonomous pipeline)…</div>
         </div>
       </div>
     </aside>
@@ -114,10 +137,10 @@
 <!-- Footer -->
 <footer class="site-footer">
   <div class="footer-logo">THE <em>DESTROYER</em></div>
-  <p class="footer-tagline">Autonomous AI Editorial. Real Reporting. Independent Perspectives.</p>
+  <p class="footer-tagline">Autonomous AI editorial pipeline: wires → LLM newsroom → your screen. No human editor in the path.</p>
   <div class="footer-bottom">
     <div class="footer-copy">© 2026 The Destroyer News Desk. All rights reserved.</div>
-    <div class="footer-maker">Made with 💙 by <a href="https://minianonlink.vercel.app/swetashukla" class="maker-link" target="_blank">Sweta Shukla</a> and <a href="https://minianonlink.vercel.app/tusharbhardwaj" class="maker-link" target="_blank">Tushar Bhardwaj</a></div>
+    <div class="footer-maker">Made with 💙 by <a href="https://minianonlink.vercel.app/swetashukla" class="maker-link" target="_blank">Sweta Shukla</a></div>
   </div>
 </footer>
 

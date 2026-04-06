@@ -9,6 +9,8 @@ const PORT = process.env.PORT || 3000;
 
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+/** Set in .env — see https://console.groq.com/docs/models */
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
 app.use(cors());
@@ -48,17 +50,18 @@ app.get('/api/news/search', async (req, res) => {
 app.post('/api/groq', async (req, res) => {
   try {
     if (!GROQ_API_KEY) return res.status(500).json({ error: 'Groq API key not configured' });
+    const payload = { ...req.body, model: GROQ_MODEL };
     const response = await fetch(GROQ_ENDPOINT, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify(payload)
     });
 
     // If streaming, pipe the response through
-    if (req.body.stream) {
+    if (payload.stream) {
       res.setHeader('Content-Type', 'text/event-stream');
       response.body.pipe(res);
     } else {
@@ -71,13 +74,19 @@ app.post('/api/groq', async (req, res) => {
   }
 });
 
+// Public config (no secrets)
+app.get('/api/config', (req, res) => {
+  res.json({ groqModel: GROQ_MODEL });
+});
+
 // Fallback: serve index.html for any other route
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🗞️  THE DESTROYER is running at http://localhost:${PORT}\n`);
+  console.log(`\n🗞️  THE DESTROYER is running at http://localhost:${PORT}`);
+  console.log(`   Groq model: ${GROQ_MODEL}\n`);
 });
 
 module.exports = app;
